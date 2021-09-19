@@ -140,5 +140,8 @@ This snippet ties our worker to the router we deifned above, all incoming reques
 are passed to the router where your routes are called and the response is sent.
 */
 addEventListener('fetch', (e) => {
-  e.respondWith(router.handle(e.request))
+  let response = router.handle(e.request)
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "drk.com.ar");
+  e.respondWith()
 })
