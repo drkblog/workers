@@ -53,6 +53,26 @@ async function createHash(email, ip) {
   return buf2hex(digest)
 }
 
+async function testRecaptcha(token, ip) {
+  try {
+    console.log(RECAPTCHA_SECRET_KEY)
+    let response = await fetch(`https://www.google.com/recaptcha/api/siteverify?secret=${RECAPTCHA_SECRET_KEY}&response=${token}&remoteip=${ip}`, {
+        method: "POST",
+    })
+    let json = await response.json()
+
+    if (json.success) {
+      return false
+    }
+
+  } catch (err) {
+    console.log("Fetch error", err)
+    throw new Response("Oops! Something went wrong.", { status: 500 })
+  }
+
+  throw new Response("reCAPTCHA failed", { status: 400 })
+}
+
 async function readInput(request) {
   const clientIP = request.headers.get("CF-Connecting-IP")
 
@@ -70,11 +90,16 @@ async function readInput(request) {
   }
 
   if (request.headers.get("Content-Type") !== "application/json") {
-    return false;
+    throw new Response("Invalid request!", { status: 400 })
   }
 
   const postData = await request.json()
   record["email"] = postData["email"]
+
+  const recaptchaResult = testRecaptcha(postData["token"], record["ip"])
+  if (recaptchaResult !== false) {
+    return recaptchaResult
+  }
 
   return record
 }
@@ -84,11 +109,12 @@ async function readInput(request) {
 */
 router.post("/post", async request => {
 
-  const record = readInput(request)
-
-  if (record === false) {
-    return new Response("Invalid request!", { status: 400 })
+  try {
+    var record = await readInput(request)
+  } catch(e) {
+    return e
   }
+  console.log(record)
 
   const hash = await createHash(record["email"], record["ip"])
   const recordString = JSON.stringify(record, null, 2)
