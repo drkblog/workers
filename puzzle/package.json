@@ -1,8 +1,8 @@
 {
   "private": true,
-  "name": "sample-worker",
+  "name": "puzzle",
   "version": "1.0.0",
-  "description": "A template for kick starting a Cloudflare Workers project",
+  "description": "A worker for handling Puzzle game",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -12,5 +12,9 @@
   "license": "MIT",
   "devDependencies": {
     "prettier": "^1.18.2"
+  },
+  "dependencies": {
+    "itty-router": "^2.1.9",
+    "serverless-cloudflare-workers": "^1.2.0"
   }
 }
