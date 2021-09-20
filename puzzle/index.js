@@ -10,30 +10,6 @@ router.get("/", () => {
   return new Response("Puzzle")
 })
 
-/*
-This route demonstrates path parameters, allowing you to extract fragments from the request
-URL.
-Try visit /example/hello and see the response.
-
-router.get("/example/:text", ({ params }) => {
-  // Decode text like "Hello%20world" into "Hello world"
-  let input = decodeURIComponent(params.text)
-
-  // Construct a buffer from our input
-  let buffer = Buffer.from(input, "utf8")
-
-  // Serialise the buffer into a base64 string
-  let base64 = buffer.toString("base64")
-
-  // Return the HTML with the string to the client
-  return new Response(`<p>Base64 encoding: <code>${base64}</code></p>`, {
-    headers: {
-      "Content-Type": "text/html"
-    }
-  })
-})
-*/
-
 function buf2hex(buffer) {
   return [...new Uint8Array(buffer)]
       .map(x => x.toString(16).padStart(2, '0'))
@@ -55,14 +31,28 @@ async function createHash(email, ip) {
 
 async function testRecaptcha(token, ip) {
   try {
-    console.log(RECAPTCHA_SECRET_KEY)
-    let response = await fetch(`https://www.google.com/recaptcha/api/siteverify?secret=${RECAPTCHA_SECRET_KEY}&response=${token}&remoteip=${ip}`, {
-        method: "POST",
-    })
+    console.log("recaptcha fetch")
+    let response = await fetch(
+      `https://www.google.com/recaptcha/api/siteverify`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          secret: RECAPTCHA_SECRET_KEY,
+          response: token
+        })
+      }
+    )
+    console.log("recaptcha json")
     let json = await response.json()
 
+    console.log(JSON.stringify(json))
+
     if (json.success) {
-      return false
+      console.log("reCaptcha validated")
+      return true
     }
 
   } catch (err) {
@@ -70,10 +60,14 @@ async function testRecaptcha(token, ip) {
     throw new Response("Oops! Something went wrong.", { status: 500 })
   }
 
+  console.log("reCAPTCHA failed")
   throw new Response("reCAPTCHA failed", { status: 400 })
 }
 
 async function readInput(request) {
+
+  console.log("Entered readInput")
+
   const clientIP = request.headers.get("CF-Connecting-IP")
 
   let record = {
@@ -90,18 +84,25 @@ async function readInput(request) {
   }
 
   if (request.headers.get("Content-Type") !== "application/json") {
-    throw new Response("Invalid request!", { status: 400 })
+    console.log("Invalid content type")
+    throw new Response("Invalid content type", { status: 400 })
   }
 
   const postData = await request.json()
   record["email"] = postData["email"]
 
-  const recaptchaResult = testRecaptcha(postData["token"], record["ip"])
-  if (recaptchaResult !== false) {
-    return recaptchaResult
-  }
+  testRecaptcha(postData["g-recaptcha-response"], record["ip"])
 
   return record
+}
+
+const originHeader = {
+  "Access-Control-Allow-Origin": "https://www.drk.com.ar"
+}
+const corsHeaders = {
+  ...originHeader,
+  "Access-Control-Allow-Methods": "GET,HEAD,POST,OPTIONS",
+  "Access-Control-Max-Age": "86400",
 }
 
 /*
@@ -109,23 +110,61 @@ async function readInput(request) {
 */
 router.post("/post", async request => {
 
-  try {
-    var record = await readInput(request)
-  } catch(e) {
-    return e
-  }
-  console.log(record)
+  console.log("Entered router.post")
 
+  const record = await readInput(request)
+  
   const hash = await createHash(record["email"], record["ip"])
   const recordString = JSON.stringify(record, null, 2)
+
+  console.log(hash + " -> " + JSON.stringify(record, null, 2))
 
   KV_PUZZLE.put(hash, recordString, {expirationTtl: 14400})
 
   return new Response(hash, {
     headers: {
-      "Content-Type": "application/json"
+      ...originHeader,
+      "Content-Type": "application/json",
+      "Vary": "Origin"
     }
   })
+})
+
+
+
+router.options("/post", async request => {
+  // Make sure the necessary headers are present
+  // for this to be a valid pre-flight request
+  let headers = request.headers;
+  console.log(headers)
+  if (
+    headers.get("Origin") !== null &&
+    headers.get("Access-Control-Request-Method") !== null &&
+    headers.get("Access-Control-Request-Headers") !== null
+  ){
+    // Handle CORS pre-flight request.
+    // If you want to check or reject the requested method + headers
+    // you can do that here.
+    let respHeaders = {
+      ...corsHeaders,
+    // Allow all future content Request headers to go back to browser
+    // such as Authorization (Bearer) or X-Client-Name-Version
+      "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers"),
+    }
+
+    return new Response(null, {
+      headers: respHeaders,
+    })
+  }
+  else {
+    // Handle standard OPTIONS request.
+    // If you want to allow other HTTP Methods, you can do that here.
+    return new Response(null, {
+      headers: {
+        Allow: "GET, HEAD, POST, OPTIONS",
+      },
+    })
+  }
 })
 
 /*
@@ -141,7 +180,5 @@ are passed to the router where your routes are called and the response is sent.
 */
 addEventListener('fetch', (e) => {
   let response = router.handle(e.request)
-  const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Origin", "drk.com.ar");
-  e.respondWith()
+  e.respondWith(response)
 })
