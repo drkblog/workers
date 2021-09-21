@@ -1,5 +1,9 @@
 import { Router } from 'itty-router'
 
+const INTERNAL_SERVER_ERROR = 500
+const BAD_REQUEST = 400
+const NOT_FOUND = 404
+
 // Create a new router
 const router = Router()
 
@@ -31,24 +35,21 @@ async function createHash(email, ip) {
 
 async function testRecaptcha(token, ip) {
   try {
-    console.log("recaptcha fetch")
-    let response = await fetch(
-      `https://www.google.com/recaptcha/api/siteverify`,
+    const body = `secret=${RECAPTCHA_SECRET_KEY}&response=${token}&remoteip=${ip}`
+    console.log("recaptcha fetch: " + body)
+    const response = await fetch(
+      'https://www.google.com/recaptcha/api/siteverify',
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: JSON.stringify({
-          secret: RECAPTCHA_SECRET_KEY,
-          response: token
-        })
+        body: body
       }
     )
-    console.log("recaptcha json")
-    let json = await response.json()
 
-    console.log(JSON.stringify(json))
+    const json = await response.json()
+    console.log("recaptcha result: " + JSON.stringify(json))
 
     if (json.success) {
       console.log("reCaptcha validated")
@@ -57,11 +58,11 @@ async function testRecaptcha(token, ip) {
 
   } catch (err) {
     console.log("Fetch error", err)
-    throw new Response("Oops! Something went wrong.", { status: 500 })
+    throw corsAwareResponse("Internal Server Error", INTERNAL_SERVER_ERROR)
   }
 
   console.log("reCAPTCHA failed")
-  throw new Response("reCAPTCHA failed", { status: 400 })
+  throw corsAwareResponse("reCAPTCHA failed", BAD_REQUEST)
 }
 
 async function readInput(request) {
@@ -72,6 +73,7 @@ async function readInput(request) {
 
   let record = {
     "email": null,
+    "answer": null,
     "ip": clientIP,
     "asn": null,
     "colo": null
@@ -85,13 +87,14 @@ async function readInput(request) {
 
   if (request.headers.get("Content-Type") !== "application/json") {
     console.log("Invalid content type")
-    throw new Response("Invalid content type", { status: 400 })
+    throw corsAwareResponse("Invalid content type", BAD_REQUEST)
   }
 
   const postData = await request.json()
   record["email"] = postData["email"]
+  record["answer"] = postData["answer"]
 
-  testRecaptcha(postData["g-recaptcha-response"], record["ip"])
+  await testRecaptcha(postData["g-recaptcha-response"], record["ip"])
 
   return record
 }
@@ -112,25 +115,32 @@ router.post("/post", async request => {
 
   console.log("Entered router.post")
 
-  const record = await readInput(request)
-  
+  try {
+    var record = await readInput(request)
+  } catch(err) {
+    console.log("Input validation failed: " + err)
+    return err;
+  }
   const hash = await createHash(record["email"], record["ip"])
   const recordString = JSON.stringify(record, null, 2)
 
-  console.log(hash + " -> " + JSON.stringify(record, null, 2))
+  console.log(hash + " -> " + recordString)
 
   KV_PUZZLE.put(hash, recordString, {expirationTtl: 14400})
 
-  return new Response(hash, {
+  return corsAwareResponse(hash)
+})
+
+function corsAwareResponse(body, status = 200) {
+  return new Response(body, {
+    status: status,
     headers: {
       ...originHeader,
       "Content-Type": "application/json",
       "Vary": "Origin"
     }
   })
-})
-
-
+}
 
 router.options("/post", async request => {
   // Make sure the necessary headers are present
@@ -172,7 +182,7 @@ This is the last route we define, it will match anything that hasn't hit a route
 above, therefore it's useful as a 404 (and avoids us hitting worker exceptions, so make sure to include it!).
 Visit any page that doesn't exist (e.g. /foobar) to see it in action.
 */
-router.all("*", () => new Response("404, not found!", { status: 404 }))
+router.all("*", () => new Response("Not found", { status: NOT_FOUND }))
 
 /*
 This snippet ties our worker to the router we deifned above, all incoming requests
