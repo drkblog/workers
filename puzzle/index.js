@@ -1,15 +1,17 @@
 import { Router } from 'itty-router'
 
-const INTERNAL_SERVER_ERROR = 500
-const BAD_REQUEST = 400
-const NOT_FOUND = 404
+const HTTP_OK = 200
+const HTTP_BAD_REQUEST = 400
+const HTTP_NOT_FOUND = 404
+const HTTP_INTERNAL_SERVER_ERROR = 500
 
-// Create a new router
+// Settings
+const KV_PUZZLE_TTL = 14400
+
+// Globals
 const router = Router()
 
-/*
-Our index route, a simple hello world.
-*/
+// Just fun
 router.get("/", () => {
   return new Response("Puzzle")
 })
@@ -36,7 +38,7 @@ async function createHash(email, ip) {
 async function testRecaptcha(token, ip) {
   try {
     const body = `secret=${RECAPTCHA_SECRET_KEY}&response=${token}&remoteip=${ip}`
-    console.log("recaptcha fetch: " + body)
+    console.log("reCAPTCHA fetch: " + body)
     const response = await fetch(
       'https://www.google.com/recaptcha/api/siteverify',
       {
@@ -49,20 +51,20 @@ async function testRecaptcha(token, ip) {
     )
 
     const json = await response.json()
-    console.log("recaptcha result: " + JSON.stringify(json))
+    console.log("reCAPTCHA result: " + JSON.stringify(json))
 
     if (json.success) {
-      console.log("reCaptcha validated")
+      console.log("reCAPTCHA validated")
       return true
     }
 
   } catch (err) {
-    console.log("Fetch error", err)
-    throw corsAwareResponse("Internal Server Error", INTERNAL_SERVER_ERROR)
+    console.log("reCAPTCHA error", err)
+    throw corsAwareResponse("Internal Server Error", HTTP_INTERNAL_SERVER_ERROR)
   }
 
   console.log("reCAPTCHA failed")
-  throw corsAwareResponse("reCAPTCHA failed", BAD_REQUEST)
+  throw corsAwareResponse("reCAPTCHA failed", HTTP_BAD_REQUEST)
 }
 
 async function readInput(request) {
@@ -87,7 +89,7 @@ async function readInput(request) {
 
   if (request.headers.get("Content-Type") !== "application/json") {
     console.log("Invalid content type")
-    throw corsAwareResponse("Invalid content type", BAD_REQUEST)
+    throw corsAwareResponse("Invalid content type", HTTP_BAD_REQUEST)
   }
 
   const postData = await request.json()
@@ -97,6 +99,28 @@ async function readInput(request) {
   await testRecaptcha(postData["g-recaptcha-response"], record["ip"])
 
   return record
+}
+
+async function sendmail(to, subject, body, from_email, from_name) {
+
+  try {
+    const mail_body = `secret=${SENDMAIL_SECRET_KEY}&to=${to}&subject=${subject}&body=${body}&from_email=${from_email}&from_name=${from_name}`
+
+    console.log("mail to: " + to)
+    const response = await fetch(
+      SENDMAIL_SECRET_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: mail_body
+      }
+    )
+  } catch (err) {
+    console.log("Sendmail error", err)
+    throw corsAwareResponse("Internal Server Error", HTTP_INTERNAL_SERVER_ERROR)
+  }
 }
 
 const originHeader = {
@@ -126,12 +150,15 @@ router.post("/post", async request => {
 
   console.log(hash + " -> " + recordString)
 
-  KV_PUZZLE.put(hash, recordString, {expirationTtl: 14400})
+  KV_PUZZLE.put(hash, recordString, {expirationTtl: KV_PUZZLE_TTL})
+
+  const mail_body = `Validate your answer by following this link: ${new URL(request.url).origin}/validate/${hash}`
+  sendmail(record["email"], 'Puzzle', mail_body, 'puzzle@drk.com.ar', 'drk.com.ar')
 
   return corsAwareResponse(hash)
 })
 
-function corsAwareResponse(body, status = 200) {
+function corsAwareResponse(body, status = HTTP_OK) {
   return new Response(body, {
     status: status,
     headers: {
@@ -143,22 +170,16 @@ function corsAwareResponse(body, status = 200) {
 }
 
 router.options("/post", async request => {
-  // Make sure the necessary headers are present
-  // for this to be a valid pre-flight request
+  // Add CORS headers
   let headers = request.headers;
   console.log(headers)
   if (
     headers.get("Origin") !== null &&
     headers.get("Access-Control-Request-Method") !== null &&
     headers.get("Access-Control-Request-Headers") !== null
-  ){
-    // Handle CORS pre-flight request.
-    // If you want to check or reject the requested method + headers
-    // you can do that here.
+  ) {
     let respHeaders = {
       ...corsHeaders,
-    // Allow all future content Request headers to go back to browser
-    // such as Authorization (Bearer) or X-Client-Name-Version
       "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers"),
     }
 
@@ -167,8 +188,7 @@ router.options("/post", async request => {
     })
   }
   else {
-    // Handle standard OPTIONS request.
-    // If you want to allow other HTTP Methods, you can do that here.
+    // Handle standard OPTIONS request
     return new Response(null, {
       headers: {
         Allow: "GET, HEAD, POST, OPTIONS",
@@ -177,17 +197,13 @@ router.options("/post", async request => {
   }
 })
 
-/*
-This is the last route we define, it will match anything that hasn't hit a route we've defined
-above, therefore it's useful as a 404 (and avoids us hitting worker exceptions, so make sure to include it!).
-Visit any page that doesn't exist (e.g. /foobar) to see it in action.
-*/
-router.all("*", () => new Response("Not found", { status: NOT_FOUND }))
+router.get("/validate/:hash", async ({ params }) => {
+  return new Response(`Todo #${params.hash}`)
+})
 
-/*
-This snippet ties our worker to the router we deifned above, all incoming requests
-are passed to the router where your routes are called and the response is sent.
-*/
+// Any route not matched before will return HTTP_NOT_FOUND
+router.all("*", () => new Response("Not found", { status: HTTP_NOT_FOUND }))
+
 addEventListener('fetch', (e) => {
   let response = router.handle(e.request)
   e.respondWith(response)
