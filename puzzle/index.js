@@ -1,20 +1,39 @@
-import { Router } from 'itty-router'
+import { Router } from 'itty-router';
 
-const HTTP_OK = 200
-const HTTP_BAD_REQUEST = 400
-const HTTP_NOT_FOUND = 404
-const HTTP_INTERNAL_SERVER_ERROR = 500
+const HTTP_OK = 200;
+const HTTP_BAD_REQUEST = 400;
+const HTTP_NOT_FOUND = 404;
+const HTTP_CONFLICT = 409;
+const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+const hash_validation_regex = /[0-9a-f]{64}/;
+
+const BASE_RECORD = {
+  "email": null,
+  "answer": null,
+  "answer_date": null,
+  "ip": null,
+  "asn": null,
+  "colo": null,
+  "verification": null
+};
+
+const VERIFICATION_RECORD = {
+  "verified": false,
+  "verification_date": null,
+  "verification_ip": null
+};
 
 // Settings
-const KV_PUZZLE_TTL = 14400
+const KV_PUZZLE_TTL = 14400;
 
 // Globals
-const router = Router()
+const router = Router();
 
 // Just fun
 router.get("/", () => {
-  return new Response("Puzzle")
-})
+  return new Response("Puzzle");
+});
 
 function buf2hex(buffer) {
   return [...new Uint8Array(buffer)]
@@ -24,21 +43,21 @@ function buf2hex(buffer) {
 
 async function createHash(email, ip) {
   const now = new Date();
-  const data = new TextEncoder().encode(email + ip + now.getMilliseconds().toString())
+  const data = new TextEncoder().encode(email + ip + now.getMilliseconds().toString());
 
   const digest = await crypto.subtle.digest(
     {
       name: "SHA-256",
     },
     data,
-  )
-  return buf2hex(digest)
+  );
+  return buf2hex(digest);
 }
 
 async function testRecaptcha(token, ip) {
   try {
-    const body = `secret=${RECAPTCHA_SECRET_KEY}&response=${token}&remoteip=${ip}`
-    console.log("reCAPTCHA fetch: " + body)
+    const body = `secret=${RECAPTCHA_SECRET_KEY}&response=${token}&remoteip=${ip}`;
+    console.log("reCAPTCHA fetch: " + body);
     const response = await fetch(
       'https://www.google.com/recaptcha/api/siteverify',
       {
@@ -48,65 +67,61 @@ async function testRecaptcha(token, ip) {
         },
         body: body
       }
-    )
+    );
 
-    const json = await response.json()
-    console.log("reCAPTCHA result: " + JSON.stringify(json))
+    const json = await response.json();
+    console.log("reCAPTCHA result: " + JSON.stringify(json));
 
     if (json.success) {
-      console.log("reCAPTCHA validated")
-      return true
+      console.log("reCAPTCHA validated");
+      return true;
     }
 
   } catch (err) {
-    console.log("reCAPTCHA error", err)
-    throw corsAwareResponse("Internal Server Error", HTTP_INTERNAL_SERVER_ERROR)
+    console.log("reCAPTCHA error", err);
+    throw corsAwareResponse("Internal Server Error", HTTP_INTERNAL_SERVER_ERROR);
   }
 
-  console.log("reCAPTCHA failed")
-  throw corsAwareResponse("reCAPTCHA failed", HTTP_BAD_REQUEST)
+  console.log("reCAPTCHA failed");
+  throw corsAwareResponse("reCAPTCHA failed", HTTP_BAD_REQUEST);
 }
 
 async function readInput(request) {
 
-  console.log("Entered readInput")
+  console.log("Entered readInput");
 
-  const clientIP = request.headers.get("CF-Connecting-IP")
+  const clientIP = request.headers.get("CF-Connecting-IP");
 
-  let record = {
-    "email": null,
-    "answer": null,
-    "ip": clientIP,
-    "asn": null,
-    "colo": null
-  }
+  let record = BASE_RECORD;
+  record.ip = clientIP;
 
   // TODO: better handling of preview 
   if (request.cf) {
-    record["asn"] = request.cf.asn
-    record["colo"] = request.cf.colo
+    record.asn = request.cf.asn;
+    record.colo = request.cf.colo;
   }
 
   if (request.headers.get("Content-Type") !== "application/json") {
-    console.log("Invalid content type")
-    throw corsAwareResponse("Invalid content type", HTTP_BAD_REQUEST)
+    console.log("Invalid content type");
+    throw corsAwareResponse("Invalid content type", HTTP_BAD_REQUEST);
   }
 
-  const postData = await request.json()
-  record["email"] = postData["email"]
-  record["answer"] = postData["answer"]
+  const postData = await request.json();
+  record.email = postData["email"];
+  record.answer = postData["answer"];
+  record.answer_date = new Date();
 
-  await testRecaptcha(postData["g-recaptcha-response"], record["ip"])
+  await testRecaptcha(postData["g-recaptcha-response"], record.ip);
 
-  return record
+  return record;
 }
 
 async function sendmail(to, subject, body, from_email, from_name) {
 
   try {
-    const mail_body = `secret=${SENDMAIL_SECRET_KEY}&to=${to}&subject=${subject}&body=${body}&from_email=${from_email}&from_name=${from_name}`
+    const mail_body = `secret=${SENDMAIL_SECRET_KEY}&to=${to}&subject=${subject}&body=${body}&from_email=${from_email}&from_name=${from_name}`;
 
-    console.log("mail to: " + to)
+    console.log("mail to: " + to);
     const response = await fetch(
       SENDMAIL_SECRET_URL,
       {
@@ -116,46 +131,46 @@ async function sendmail(to, subject, body, from_email, from_name) {
         },
         body: mail_body
       }
-    )
+    );
   } catch (err) {
-    console.log("Sendmail error", err)
-    throw corsAwareResponse("Internal Server Error", HTTP_INTERNAL_SERVER_ERROR)
+    console.log("Sendmail error", err);
+    throw corsAwareResponse("Internal Server Error", HTTP_INTERNAL_SERVER_ERROR);
   }
 }
 
 const originHeader = {
   "Access-Control-Allow-Origin": "https://www.drk.com.ar"
-}
+};
 const corsHeaders = {
   ...originHeader,
   "Access-Control-Allow-Methods": "GET,HEAD,POST,OPTIONS",
   "Access-Control-Max-Age": "86400",
-}
+};
 
 /*
   Handler for /post
 */
 router.post("/post", async request => {
 
-  console.log("Entered router.post")
+  console.log("Entered router.post");
 
   try {
-    var record = await readInput(request)
+    var record = await readInput(request);
   } catch(err) {
-    console.log("Input validation failed: " + err)
+    console.log("Input validation failed: " + err);
     return err;
   }
-  const hash = await createHash(record["email"], record["ip"])
-  const recordString = JSON.stringify(record, null, 2)
+  const hash = await createHash(record["email"], record["ip"]);
+  const recordString = JSON.stringify(record, null, 2);
 
-  console.log(hash + " -> " + recordString)
+  console.log(hash + " -> " + recordString);
 
-  KV_PUZZLE.put(hash, recordString, {expirationTtl: KV_PUZZLE_TTL})
+  KV_PUZZLE.put(hash, recordString, {expirationTtl: KV_PUZZLE_TTL});
 
-  const mail_body = `Validate your answer by following this link: ${new URL(request.url).origin}/validate/${hash}`
-  sendmail(record["email"], 'Puzzle', mail_body, 'puzzle@drk.com.ar', 'drk.com.ar')
+  const mail_body = `Validate your answer by following this link: ${new URL(request.url).origin}/verify/${hash}`;
+  sendmail(record["email"], 'Puzzle', mail_body, 'puzzle@drk.com.ar', 'drk.com.ar');
 
-  return corsAwareResponse(hash)
+  return corsAwareResponse('Answer accepted. You will receive a confirmation email.');
 })
 
 function corsAwareResponse(body, status = HTTP_OK) {
@@ -166,13 +181,13 @@ function corsAwareResponse(body, status = HTTP_OK) {
       "Content-Type": "application/json",
       "Vary": "Origin"
     }
-  })
+  });
 }
 
 router.options("/post", async request => {
   // Add CORS headers
   let headers = request.headers;
-  console.log(headers)
+  console.log(headers);
   if (
     headers.get("Origin") !== null &&
     headers.get("Access-Control-Request-Method") !== null &&
@@ -181,11 +196,11 @@ router.options("/post", async request => {
     let respHeaders = {
       ...corsHeaders,
       "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers"),
-    }
+    };
 
     return new Response(null, {
       headers: respHeaders,
-    })
+    });
   }
   else {
     // Handle standard OPTIONS request
@@ -193,18 +208,47 @@ router.options("/post", async request => {
       headers: {
         Allow: "GET, HEAD, POST, OPTIONS",
       },
-    })
+    });
   }
 })
 
-router.get("/validate/:hash", async ({ params }) => {
-  return new Response(`Todo #${params.hash}`)
+router.get("/verify/:hash", async (request) => {
+  const { params, query } = request;
+  const hash = params.hash;
+
+  if (!hash.match(hash_validation_regex)) {
+    return corsAwareResponse("Invalid hash format", HTTP_BAD_REQUEST);
+  }
+
+  const clientIP = request.headers.get("CF-Connecting-IP");
+
+  const record = await KV_PUZZLE.get(hash, {type: "json"});
+  if (record === null) {
+    return corsAwareResponse("Invalid hash", HTTP_NOT_FOUND);
+  }
+
+  if (record.verification !== null) {
+    return corsAwareResponse("Answer previously verified", HTTP_CONFLICT);
+  }
+
+  const verification_record = VERIFICATION_RECORD;
+  verification_record.verified = true;
+  verification_record.verification_ip = clientIP;
+  verification_record.verification_date = new Date();
+  record.verification = verification_record;
+
+  const recordString = JSON.stringify(record, null, 2);
+  console.log(hash + " -> " + recordString);
+
+  KV_PUZZLE.put(hash, recordString);
+
+  return new Response("Answer verified correctly");
 })
 
 // Any route not matched before will return HTTP_NOT_FOUND
-router.all("*", () => new Response("Not found", { status: HTTP_NOT_FOUND }))
+router.all("*", () => new Response("Not found", { status: HTTP_NOT_FOUND }));
 
 addEventListener('fetch', (e) => {
-  let response = router.handle(e.request)
-  e.respondWith(response)
-})
+  let response = router.handle(e.request);
+  e.respondWith(response);
+});
