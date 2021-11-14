@@ -21,11 +21,12 @@ const BASE_RECORD = {
 const VERIFICATION_RECORD = {
   "verified": false,
   "verification_date": null,
-  "verification_ip": null
+  "verification_ip": null,
+  "answer_is_correct": false
 };
 
 // Settings
-const KV_PUZZLE_TTL = 14400;
+const KV_PUZZLE_TTL = 12 * 60 * 60;
 
 // Globals
 const router = Router();
@@ -52,6 +53,17 @@ async function createHash(email, ip) {
     data,
   );
   return buf2hex(digest);
+}
+
+async function answerIsCorrect(answer) {
+  const data =  new TextEncoder().encode(answer);
+  const digest = await crypto.subtle.digest(
+    {
+      name: "SHA-512",
+    },
+    data,
+  );
+  return digest === PUZZLE_SECRET_ANSWER;
 }
 
 async function testRecaptcha(token, ip) {
@@ -165,12 +177,17 @@ router.post("/post", async request => {
 
   console.log(hash + " -> " + recordString);
 
-  KV_PUZZLE.put(hash, recordString, {expirationTtl: KV_PUZZLE_TTL});
+  await KV_PUZZLE.put(hash, recordString, {expirationTtl: KV_PUZZLE_TTL});
 
-  const mail_body = `Validate your answer by following this link: ${new URL(request.url).origin}/verify/${hash}`;
+  const link_duration = KV_PUZZLE_TTL / 3600;
+  const mail_body = `
+      Validate your answer and email address by following this link: ${new URL(request.url).origin}/verify/${hash}\n
+      This link lasts ${link_duration} hours and it won't work after that.
+  `;
+
   sendmail(record["email"], 'Puzzle', mail_body, 'puzzle@drk.com.ar', 'drk.com.ar');
 
-  return corsAwareResponse('Answer accepted. You will receive a confirmation email.');
+  return corsAwareResponse('Answer accepted. You will receive an email to validate your answer and email address.');
 })
 
 function corsAwareResponse(body, status = HTTP_OK) {
@@ -228,13 +245,16 @@ router.get("/verify/:hash", async (request) => {
   }
 
   if (record.verification !== null) {
-    return corsAwareResponse("Answer previously verified", HTTP_CONFLICT);
+    return corsAwareResponse("This answer and email address combination was already verified by email", HTTP_CONFLICT);
   }
+
+  const isCorrect = await answerIsCorrect(record.answer);
 
   const verification_record = VERIFICATION_RECORD;
   verification_record.verified = true;
   verification_record.verification_ip = clientIP;
   verification_record.verification_date = new Date();
+  verification_record.answer_is_correct = isCorrect;
   record.verification = verification_record;
 
   const recordString = JSON.stringify(record, null, 2);
@@ -242,7 +262,13 @@ router.get("/verify/:hash", async (request) => {
 
   KV_PUZZLE.put(hash, recordString);
 
-  return new Response("Answer verified correctly");
+  const result = isCorrect ? 'correct' : 'incorrect';
+  const message = `
+      Answer and email address verified successfully.
+      Your answer is ${result}!
+  `;
+
+  return new Response(message);
 })
 
 // Any route not matched before will return HTTP_NOT_FOUND

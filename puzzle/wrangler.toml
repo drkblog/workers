@@ -6,6 +6,8 @@ workers_dev = true
 route = ""
 zone_id = ""
 
+compatibility_date = "2021-11-14"
+
 kv_namespaces = [
     { binding = "KV_PUZZLE", preview_id = "b661362d37814bd5bd3c84c049b737a1", id = "d8da34f3cfb7418785a1d24e0c1594c6" }
 ]
