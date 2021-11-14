@@ -46,23 +46,27 @@ async function createHash(email, ip) {
   const now = new Date();
   const data = new TextEncoder().encode(email + ip + now.getMilliseconds().toString());
 
-  const digest = await crypto.subtle.digest(
+  const digestBuffer = await crypto.subtle.digest(
     {
       name: "SHA-256",
     },
     data,
   );
-  return buf2hex(digest);
+  return buf2hex(digestBuffer);
 }
 
 async function answerIsCorrect(answer) {
   const data =  new TextEncoder().encode(answer);
-  const digest = await crypto.subtle.digest(
+  const digestBuffer = await crypto.subtle.digest(
     {
       name: "SHA-512",
     },
     data,
   );
+  const digest = buf2hex(digestBuffer);
+
+  console.log({answer, data, digest});
+
   return digest === PUZZLE_SECRET_ANSWER;
 }
 
