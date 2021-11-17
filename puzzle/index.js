@@ -1,10 +1,14 @@
 import { Router } from 'itty-router';
 
 const HTTP_OK = 200;
+const HTTP_SEE_OTHER = 303
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+const REPLY_EMAIL_VALIDATED_ANSWER_INCORRECT = 1;
+const REPLY_EMAIL_VALIDATED_ANSWER_CORRECT = 2;
 
 const hash_validation_regex = /[0-9a-f]{64}/;
 
@@ -191,7 +195,7 @@ router.post("/post", async request => {
 
   sendmail(record["email"], 'Puzzle', mail_body, 'puzzle@drk.com.ar', 'drk.com.ar');
 
-  return corsAwareResponse('Answer accepted. You will receive an email to validate your answer and email address.');
+  return corsAwareResponse('Answer accepted. You will receive an email to validate your answer and email address.')
 })
 
 function corsAwareResponse(body, status = HTTP_OK) {
@@ -203,6 +207,11 @@ function corsAwareResponse(body, status = HTTP_OK) {
       "Vary": "Origin"
     }
   });
+}
+
+function corsAwareRedirectResponse(message, redirectCode = HTTP_SEE_OTHER) {
+  const destinationURL = `https://drk.com.ar/drkquest1-reply-${message}/`;
+  return Response.redirect(destinationURL, redirectCode);
 }
 
 router.options("/post", async request => {
@@ -266,13 +275,9 @@ router.get("/verify/:hash", async (request) => {
 
   KV_PUZZLE.put(hash, recordString);
 
-  const result = isCorrect ? 'correct' : 'incorrect';
-  const message = `
-      Answer and email address verified successfully.
-      Your answer is ${result}!
-  `;
+  const result = isCorrect ? REPLY_EMAIL_VALIDATED_ANSWER_CORRECT : REPLY_EMAIL_VALIDATED_ANSWER_INCORRECT;
 
-  return new Response(message);
+  return new corsAwareRedirectResponse(result);
 })
 
 // Any route not matched before will return HTTP_NOT_FOUND
