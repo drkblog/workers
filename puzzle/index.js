@@ -209,8 +209,8 @@ function corsAwareResponse(body, status = HTTP_OK) {
   });
 }
 
-function corsAwareRedirectResponse(message, redirectCode = HTTP_SEE_OTHER) {
-  const destinationURL = `https://drk.com.ar/drkquest1-reply-${message}/`;
+function corsAwareRedirectResponse(message, getString = null, redirectCode = HTTP_SEE_OTHER) {
+  const destinationURL = `https://drk.com.ar/drkquest1-reply-${message}/` + ((getString != null) ? `?${getString}` : '');
   return Response.redirect(destinationURL, redirectCode);
 }
 
@@ -273,11 +273,13 @@ router.get("/verify/:hash", async (request) => {
   const recordString = JSON.stringify(record, null, 2);
   console.log(hash + " -> " + recordString);
 
-  KV_PUZZLE.put(hash, recordString);
+  await KV_PUZZLE.put(hash, recordString);
 
-  const result = isCorrect ? REPLY_EMAIL_VALIDATED_ANSWER_CORRECT : REPLY_EMAIL_VALIDATED_ANSWER_INCORRECT;
-
-  return new corsAwareRedirectResponse(result);
+  if (isCorrect === true) {
+    return new corsAwareRedirectResponse(REPLY_EMAIL_VALIDATED_ANSWER_CORRECT, hash);
+  } else {
+    return new corsAwareRedirectResponse(REPLY_EMAIL_VALIDATED_ANSWER_INCORRECT);
+  }
 })
 
 // Any route not matched before will return HTTP_NOT_FOUND
