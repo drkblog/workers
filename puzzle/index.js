@@ -10,6 +10,10 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 const REPLY_EMAIL_VALIDATED_ANSWER_INCORRECT = 1;
 const REPLY_EMAIL_VALIDATED_ANSWER_CORRECT = 2;
 
+const FROM_EMAIL_ADDRESS = 'puzzle@drk.com.ar';
+const FROM_DISPLAY_NAME = 'drkbugs';
+const EMAIL_SUBJECT = '#drkquest1';
+
 const hash_validation_regex = /[0-9a-f]{64}/;
 
 const BASE_RECORD = {
@@ -37,7 +41,7 @@ const router = Router();
 
 // Just fun
 router.get("/", () => {
-  return new Response("Puzzle");
+  return new Response("drkbugs");
 });
 
 function buf2hex(buffer) {
@@ -189,13 +193,13 @@ router.post("/post", async request => {
 
   const link_duration = KV_PUZZLE_TTL / 3600;
   const mail_body = `
-      Validate your answer and email address by following this link: ${new URL(request.url).origin}/verify/${hash}\n
-      This link lasts ${link_duration} hours and it won't work after that.
+      Validá tu dirección de correo y tu respuesta entrando al siguiente enlace: ${new URL(request.url).origin}/verify/${hash}\n
+      Este enlace dura ${link_duration} horas y no funcionará pasado ese tiempo.
   `;
 
-  sendmail(record["email"], 'Puzzle', mail_body, 'puzzle@drk.com.ar', 'drk.com.ar');
+  sendmail(record["email"], EMAIL_SUBJECT, mail_body, FROM_EMAIL_ADDRESS, FROM_DISPLAY_NAME);
 
-  return corsAwareResponse('Answer accepted. You will receive an email to validate your answer and email address.')
+  return corsAwareResponse('Respuesta aceptada. Recibirás un correo electrónico para validar tu dirección y la respuesta.');
 })
 
 function corsAwareResponse(body, status = HTTP_OK) {
@@ -258,7 +262,7 @@ router.get("/verify/:hash", async (request) => {
   }
 
   if (record.verification !== null) {
-    return corsAwareResponse("This answer and email address combination was already verified by email", HTTP_CONFLICT);
+    return corsAwareResponse('Esta respuesta y dirección de correo ya fueron validadas anteriormente.', HTTP_CONFLICT);
   }
 
   const isCorrect = await answerIsCorrect(record.answer);
