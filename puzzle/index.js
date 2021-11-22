@@ -5,6 +5,7 @@ const HTTP_SEE_OTHER = 303
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
+const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
 
 const REPLY_EMAIL_VALIDATED_ANSWER_INCORRECT = 1;
@@ -35,6 +36,7 @@ const VERIFICATION_RECORD = {
 
 // Settings
 const KV_PUZZLE_TTL = 12 * 60 * 60;
+const KV_PUZZLE_THROTTLE_TTL = 60;
 
 // Globals
 const router = Router();
@@ -110,13 +112,28 @@ async function testRecaptcha(token, ip) {
   throw corsAwareResponse("reCAPTCHA failed", HTTP_BAD_REQUEST);
 }
 
-async function readInput(request) {
+async function throttle(ip) {
+  const present = await KV_PUZZLE_THROTTLE.get(ip);
 
-  console.log("Entered readInput");
+  console.log({present});
+
+  if (present != null) {
+    const message = `Sólo se puede enviar una respuesta cada ${KV_PUZZLE_THROTTLE_TTL} segundos desde una dirección IP`;
+    throw corsAwareResponse(message, HTTP_TOO_MANY_REQUESTS);
+  }
+
+  await KV_PUZZLE_THROTTLE.put(ip, 'true', { expirationTtl: KV_PUZZLE_THROTTLE_TTL });
+}
+
+async function processAnswerData(request) {
+
+  console.log("processAnswerData()");
 
   const clientIP = request.headers.get("CF-Connecting-IP");
 
-  let record = BASE_RECORD;
+  await throttle(clientIP);
+
+  var record = BASE_RECORD;
   record.ip = clientIP;
 
   // TODO: better handling of preview 
@@ -179,9 +196,9 @@ router.post("/post", async request => {
   console.log("Entered router.post");
 
   try {
-    var record = await readInput(request);
+    var record = await processAnswerData(request);
   } catch(err) {
-    console.log("Input validation failed: " + err);
+    console.log("Input validation/sanitization failed: " + err);
     return err;
   }
   const hash = await createHash(record["email"], record["ip"]);
@@ -189,7 +206,7 @@ router.post("/post", async request => {
 
   console.log(hash + " -> " + recordString);
 
-  await KV_PUZZLE.put(hash, recordString, {expirationTtl: KV_PUZZLE_TTL});
+  await KV_PUZZLE.put(hash, recordString, { expirationTtl: KV_PUZZLE_TTL });
 
   const link_duration = KV_PUZZLE_TTL / 3600;
   const mail_body = `
@@ -256,7 +273,7 @@ router.get("/verify/:hash", async (request) => {
 
   const clientIP = request.headers.get("CF-Connecting-IP");
 
-  const record = await KV_PUZZLE.get(hash, {type: "json"});
+  const record = await KV_PUZZLE.get(hash, { type: "json" });
   if (record === null) {
     return corsAwareResponse("Invalid hash", HTTP_NOT_FOUND);
   }
