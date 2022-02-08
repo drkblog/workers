@@ -1,0 +1,14 @@
+name = "10k"
+type = "webpack"
+
+account_id = "bc068512994d36dd85f41c4c0b27c489"
+workers_dev = true
+route = ""
+zone_id = ""
+
+compatibility_date = "2022-02-08"
+
+kv_namespaces = [
+  { binding = "KV_SIGNUP", id = "b5e3d5f0838942bb956e6f86be3c2773" },
+  { binding = "KV_SIGNUP_THROTTLE", id = "aa5b34ab14184b34b00f4c9e22c39acd" }
+]
