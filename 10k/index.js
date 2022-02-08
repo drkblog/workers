@@ -42,23 +42,10 @@ router.get('/', () => {
   return new Response('drkbugs');
 });
 
-function buf2hex(buffer) {
-  return [...new Uint8Array(buffer)]
-      .map(x => x.toString(16).padStart(2, '0'))
-      .join('');
-}
-
-async function createHash(email, ip) {
-  const now = new Date();
-  const data = new TextEncoder().encode(email + ip + now.getMilliseconds().toString());
-
-  const digestBuffer = await crypto.subtle.digest(
-    {
-      name: 'SHA-256',
-    },
-    data,
-  );
-  return buf2hex(digestBuffer);
+function generateRandomHash(size) {
+  const randomBytes = new Uint8Array(size);
+  crypto.getRandomValues(randomBytes);
+  return [...randomBytes].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
 async function testRecaptcha(token, ip) {
@@ -170,7 +157,7 @@ router.post('/post', async request => {
     console.error(`Input validation/sanitization failed: ${err}`);
     return err;
   }
-  const hash = await createHash(record['email'], record['ip']);
+  const hash = generateRandomHash(30);
   const recordString = JSON.stringify(record, null, 2);
 
   await KV_SIGNUP.put(hash, recordString, { expirationTtl: KV_SIGNUP_TTL });
