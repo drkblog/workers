@@ -8,9 +8,9 @@ const HTTP_CONFLICT = 409;
 const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
 
-const FROM_EMAIL_ADDRESS = '10k@drk.com.ar';
-const FROM_DISPLAY_NAME = 'drkbugs';
-const EMAIL_SUBJECT = 'drkbugs Tiktok 10k';
+const FROM_EMAIL_ADDRESS = 'webmaster@drk.com.ar';
+const FROM_DISPLAY_NAME = '@drkbugs';
+const EMAIL_SUBJECT = 'drkbugs - Festejo 10.000 seguidores';
 
 const hash_validation_regex = /[0-9a-f]{64}/;
 
@@ -131,6 +131,7 @@ async function sendmail(to, subject, body, from_email, from_name) {
         body: mail_body
       }
     );
+    console.debug(response);
   } catch (err) {
     console.error(`Sendmail error: ${err}`);
     throw corsAwareResponse('Internal Server Error', HTTP_INTERNAL_SERVER_ERROR);
@@ -164,13 +165,15 @@ router.post('/post', async request => {
 
   const link_duration = KV_SIGNUP_TTL / 3600;
   const mail_body = `
+      ¡Festejamos los 10.000 seguidores de mi cuenta de TikTok!\n
+      Gracias por participar y apoyar. Si aún no lo hiciste te recomiendo que me sigas en Instagram y en YouTube.\n
       Validá tu dirección de correo entrando al siguiente enlace: ${new URL(request.url).origin}/verify/${hash}\n
       Este enlace dura ${link_duration} horas y no funcionará pasado ese tiempo.
   `;
 
   sendmail(record['email'], EMAIL_SUBJECT, mail_body, FROM_EMAIL_ADDRESS, FROM_DISPLAY_NAME);
 
-  return corsAwareResponse('Inscripción iniciada. Recibirás un correo electrónico para validar tu dirección.');
+  return corsAwareResponse('<strong>Inscripción iniciada.</strong> Recibirás un correo electrónico para <strong>validar tu dirección</strong>.<br>Revisá tu casilla de spam si no recibís el mensaje en tu casilla de entrada en 15 minutos.');
 })
 
 function corsAwareResponse(body, status = HTTP_OK) {
