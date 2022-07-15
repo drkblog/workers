@@ -10,7 +10,7 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 
 const FROM_EMAIL_ADDRESS = 'webmaster@drk.com.ar';
 const FROM_DISPLAY_NAME = '@drkbugs';
-const EMAIL_SUBJECT = 'drkbugs - Festejo 10.000 seguidores';
+const EMAIL_SUBJECT = 'Confirmá inscripción en drkbugs - festejo 10.000 seguidores';
 
 const hash_validation_regex = /[0-9a-f]{64}/;
 
@@ -165,13 +165,19 @@ router.post('/post', async request => {
 
   const link_duration = KV_SIGNUP_TTL / 3600;
   const mail_body = `
-      ¡Festejamos los 10.000 seguidores de mi cuenta de TikTok!\n
-      Gracias por participar y apoyar. Si aún no lo hiciste te recomiendo que me sigas en Instagram y en YouTube.\n
-      Validá tu dirección de correo entrando al siguiente enlace: ${new URL(request.url).origin}/verify/${hash}\n
-      Este enlace dura ${link_duration} horas y no funcionará pasado ese tiempo.
+      <h3>¡Festejamos los 10.000 seguidores de mi cuenta de TikTok!</h3>\n
+      <p>
+        <strong>Gracias por participar y apoyar.</strong> Si aún no lo hiciste te recomiendo que me sigas en Instagram y en YouTube.<br>\n
+        Validá tu dirección de correo entrando al siguiente enlace: ${new URL(request.url).origin}/verify/${hash}<br>\n
+        Este enlace dura ${link_duration} horas y no funcionará pasado ese tiempo.
+      </p>
+      <p>
+        Estás recibiendo este correo porque completaste el formulario en <a href="https://drk.com.ar/10k">https://drk.com.ar/10k</a>.
+        Si no lo hiciste ignorá este corre por completo.
+      </p>
   `;
 
-  sendmail(record['email'], EMAIL_SUBJECT, mail_body, FROM_EMAIL_ADDRESS, FROM_DISPLAY_NAME);
+  await sendmail(record['email'], EMAIL_SUBJECT, mail_body, FROM_EMAIL_ADDRESS, FROM_DISPLAY_NAME);
 
   return corsAwareResponse('<strong>Inscripción iniciada.</strong> Recibirás un correo electrónico para <strong>validar tu dirección</strong>.<br>Revisá tu casilla de spam si no recibís el mensaje en tu casilla de entrada en 15 minutos.');
 })
